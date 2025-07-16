@@ -85,6 +85,97 @@ nest g resource resource-name                    # Create a resource (module, co
 nest g guard guard-name                          # Create a guard (for authorization)
 ```
 
+## Connecting to a Database
+
+To connect to a database, you can use TypeORM or Mongoose. Here’s how to set up TypeORM:
+
+```bash
+npm install --save @nestjs/typeorm typeorm mysql2
+```
+
+Then, configure TypeORM in your `app.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+@Module({
+  imports: [
+    TypeOrmModule.forRoot({
+      type: 'mysql',
+      host: 'localhost',
+      port: 3306,
+      username: 'root',
+      password: 'root',
+      database: 'test',
+      entities: [],
+      synchronize: true,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+For raw sql without ORM, you can use the `mysql2` package directly:
+
+```bash
+npm install mysql2
+```
+
+Create a Database Provider
+
+```typescript
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import * as mysql from 'mysql2/promise';
+
+@Injectable()
+export class DatabaseService implements OnModuleDestroy {
+  private pool: mysql.Pool;
+
+  constructor() {
+    this.pool = mysql.createPool({
+      host: 'localhost',
+      user: 'root',
+      password: 'root',
+      database: 'test',
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+    });
+  }
+
+  async query<T = any>(
+    sql: string,
+    params?: any[],
+  ): Promise<[T[], mysql.FieldPacket[]]> {
+    return this.pool.query<T[]>(sql, params);
+  }
+
+  async onModuleDestroy() {
+    await this.pool.end();
+  }
+}
+```
+
+Then, import this service in your `AppModule`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { DatabaseService } from './database.service';
+
+@Module({
+  providers: [DatabaseService],
+  exports: [DatabaseService],
+})
+export class AppModule {}
+```
+
+You can now inject `DatabaseService` into your controllers or services to execute raw SQL queries.
+
+```typescript
+constructor(private readonly db: DatabaseService) {}
+```
+
 ---
 
 # 📦 How NestJS Projects Are Organized
@@ -93,38 +184,38 @@ If you’re coming from Spring Boot, you’ll find many familiar concepts, but w
 
 ## 1. **Core Concepts**
 
-- **Modules**:  
+- **Modules**:
   - The main organizational unit in NestJS (like a feature package in Spring Boot).
   - Each feature (e.g., User, Auth) gets its own module (`user.module.ts`).
   - Modules group related controllers, services, and providers.
   - Modules can import and export providers to share functionality.
 
-- **Controllers**:  
+- **Controllers**:
   - Handle incoming HTTP requests (like Spring’s `@RestController`).
   - Route requests to the appropriate service methods.
 
-- **Services**:  
+- **Services**:
   - Contain business logic (like Spring’s `@Service`).
   - Can be injected into controllers or other services.
 
-- **Providers**:  
+- **Providers**:
   - Any class that can be injected (services, repositories, etc.).
 
-- **Repositories**:  
+- **Repositories**:
   - Not built-in, but you can create repository classes or use TypeORM/Mongoose repositories for DB access (like Spring Data JPA).
 
 ---
 
 ## 2. **Entities, Models, Enums, and Types**
 
-- **Entities/Models**:  
+- **Entities/Models**:
   - Store in a folder like `src/user/entities/user.entity.ts` or `src/entities/`.
   - Used with ORMs (TypeORM, Sequelize, etc.) to map to DB tables.
 
-- **Enums**:  
+- **Enums**:
   - Place in `src/common/enums/` or within the relevant module.
 
-- **Types/Interfaces**:  
+- **Types/Interfaces**:
   - Place in `src/common/types/` or `src/user/types/`.
   - Useful for DTOs, request/response shapes, etc.
   - In backend, you often use entities/models directly for type safety.
@@ -133,11 +224,12 @@ If you’re coming from Spring Boot, you’ll find many familiar concepts, but w
 
 ## 3. **Module Communication & Dependency Injection**
 
-- **Injecting Services**:  
+- **Injecting Services**:
   - Use Nest’s dependency injection (constructor injection, like Spring).
   - To use a service from another module, export it in the provider module and import that module where needed.
 
 **Example:**
+
 ```typescript
 // user.module.ts
 @Module({
